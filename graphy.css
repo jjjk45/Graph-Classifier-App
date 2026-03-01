@@ -1,10 +1,10 @@
+#h1 {
+    text-shadow: #bbbbbb 1px 1px 1px
+}
+#body   {
+    background: #000000;
+}
 #theCanvas  {
     background-color: #fff;
     border: 1px solid black;
-}
-#body   {
-    background: black;
-}
-#h1 {
-    text-shadow: #bbbbbb 1px 1px 1px
 }

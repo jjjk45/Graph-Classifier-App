@@ -1,4 +1,4 @@
-const mouseButton = Object.freeze({ //my enum
+const mouseButton = Object.freeze({
     LEFT: '0',
     RIGHT: '2'
 });
@@ -6,19 +6,17 @@ const mouseButton = Object.freeze({ //my enum
 class Graphy    {
     /**
      * @param {number} radius - vertex radius
+     * @param {canvasContext} ctx
      */
     constructor(radius, ctx) {
         this.radius = radius;   //I like 7.5
         this.gridSize = radius * 4;
         this.cellHalf = this.gridSize / 2;
-        this.vertices = new Map();
+        this.adjacency = new Map();
         this.ctx = ctx;
+        this.mouseDown = null;
     }
-    /**
-     * @param {mouseEvent/pointerEvent} event
-     * @param {mouseButton} button -- enum
-     */
-    clickCanvas(event, button)    {
+    leftClickCanvasDown(event)  {
         let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
         let yCoord = Math.round(event.offsetY/this.gridSize) * this.gridSize;
         if(xCoord == 0 || yCoord == 0)   {
@@ -26,20 +24,61 @@ class Graphy    {
             return;
         }
         let key = `${xCoord},${yCoord}`;
-        if(button == mouseButton.RIGHT && this.vertices.has(key))    {
-            console.log(`Deleted (${key})`);
-            this.vertices.delete(key);
-            this.ctx.clearRect(xCoord - this.cellHalf, yCoord - this.cellHalf, this.gridSize, this.gridSize);
-        } else if(button == mouseButton.LEFT && !this.vertices.has(key))    {
-            console.log(`Added (${key})`);
-            this.vertices.set(key, true);
-            this.#drawVertex(xCoord, yCoord);
+        if(this.mouseDown === null) {
+            this.mouseDown = key;
+            return;
         }
     }
-    /**
-     * @param {mouseEvent/pointerEvent} event  //WHICH ONE?????
-     * @param {canvas context} ctx
-     */
+    leftClickCanvasUp(event)    {
+        if(event.button == mouseButton.RIGHT)   {
+            return;
+        }
+        let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
+        let yCoord = Math.round(event.offsetY/this.gridSize) * this.gridSize;
+        let key = `${xCoord},${yCoord}`;
+        const start = this.mouseDown;
+        this.mouseDown = null;
+
+        if(start === key) {
+            if(this.adjacency.has(key)) {
+                console.log("Vertex already exists");
+                return;
+            }
+            console.log(`Added (${key})`);
+            this.adjacency.set(key, new Set());
+            this.#drawVertex(xCoord, yCoord);
+            return;
+        }
+        if(!this.adjacency.has(start) || !this.adjacency.has(key)) {
+            console.log("fail");
+            return;
+        }
+        if(this.adjacency.get(start).has(key)) {
+            console.log("Edge already exists");
+            return;
+        }
+        this.adjacency.get(start).add(key);
+        this.adjacency.get(key).add(start);
+        const [startX, startY] = start.split(",");
+        this.#drawEdge(startX, startY, xCoord, yCoord);
+    }
+    rightClickCanvas(event)    {
+        let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
+        let yCoord = Math.round(event.offsetY/this.gridSize) * this.gridSize;
+        let key = `${xCoord},${yCoord}`;
+        if(this.adjacency.has(key))    {
+            console.log(`Deleted (${key})`);
+            for(let i of this.adjacency.keys())   {
+                if(this.adjacency.get(i).delete(key) == false)  {
+                    console.log(`deleting edge failed`);
+                }
+                console.log(` & edge from ${i}`);
+            }
+            this.adjacency.delete(key);
+            console.log(this.adjacency);
+            this.ctx.clearRect(xCoord - this.cellHalf, yCoord - this.cellHalf, this.gridSize, this.gridSize);
+        }
+    }
     #drawVertex(x, y) {
         console.log(`Vertex drawn at (${x}, ${y})`);
         this.ctx.beginPath();
@@ -50,14 +89,28 @@ class Graphy    {
         this.ctx.fill();
         this.ctx.stroke();
     }
+    #drawEdge(startX, startY, endX, endY) {
+        console.log(`Edge drawn from (${startX}, ${startY}) to (${endX}, ${endY})`);
+        this.ctx.beginPath();
+        this.ctx.moveTo(startX, startY);
+        this.ctx.lineTo(endX, endY);
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = "#111"
+        this.ctx.fillStyle = "#111";
+        this.ctx.fill();
+        this.ctx.stroke();
+    }
+    #deleteVertex() {
+
+    }
 }
 
 window.onload = function() {
     const canvas = document.getElementById("theCanvas");
     const _height = window.innerHeight - Math.floor(window.innerHeight/5);
     const _width = window.innerWidth;
-    if(canvas == null)  {
-        console.log("canvas has not loaded yet");
+    while(canvas == null)  {
+        console.log("Canvas has not loaded yet");
     }
     canvas.height = _height;
     canvas.width = _width;
@@ -65,14 +118,15 @@ window.onload = function() {
     ctx.globalCompositeOperation = "screen";
     const graph = new Graphy(10, ctx);
 
-    canvas.addEventListener("click", (event) => {   //left click
-        graph.clickCanvas(event, mouseButton.LEFT);
-        console.log(`${event.button}`);
+    canvas.addEventListener("mousedown", (event) => {
+        graph.leftClickCanvasDown(event);
+    });
+    canvas.addEventListener("mouseup", (event) => {
+        graph.leftClickCanvasUp(event);
         //console.log(`Click registered at (${event.offsetX}, ${event.offsetY})`);
     });
-    canvas.addEventListener("contextmenu", (event) => { // right click
+    canvas.addEventListener("contextmenu", (event) => {
         event.preventDefault();
-        graph.clickCanvas(event, mouseButton.RIGHT);
-        console.log(`${event.button}`);
+        graph.rightClickCanvas(event);
     });
 }
