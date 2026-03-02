@@ -10,13 +10,53 @@ class Graphy    {
      * @param {canvasContext} ctx
      */
     constructor(radius, height, width, ctx) {
-        this.radius = radius;   //I like 7.5
+        this.radius = radius;
         this.gridSize = radius * 4;
         this.cellHalf = this.gridSize / 2;
         this.height = height;
         this.width = width;
         this.ctx = ctx;
         this.mouseDown = null;
+    }
+    exportCSR()   {
+        if(this.#adjacency.size < 1)  {
+            console.error(`There are no vertices to export!`);
+            return;
+        }
+        const numsToLocationsMap = new Map(); //to be stored for converting back after wasm module uses the csr
+        const locationsToNumsMap = new Map(); //for use in this function
+        let i = 0;
+        for(let v of this.#adjacency.keys())    {
+            if(!numsToLocationsMap.has(i) && !locationsToNumsMap.has(v))   {
+                console.log(v);
+                numsToLocationsMap.set(i,v);
+                locationsToNumsMap.set(v,i);
+            }
+            i++;
+        }
+        const rowPtrs = new Array();
+        const colIndices = new Array();
+        let used = 0;
+        for(let v of this.#adjacency.keys()) {
+            let degree = 0;
+            for(let e of this.#adjacency.get(v).values())   {
+                colIndices.push(locationsToNumsMap.get(e));
+                degree++;
+                used++;
+            }
+            if(degree < 1)  {
+                rowPtrs[locationsToNumsMap.get(v)] = -1;
+            } else {
+                rowPtrs[locationsToNumsMap.get(v)] = (used - degree);
+            }
+        }
+        const rowPtrsInt32 = new Int32Array(rowPtrs);
+        const colIndicesInt32 = new Int32Array(colIndices);
+        return  { numsToLocationsMap: numsToLocationsMap,
+                  locationsToNumsMap: locationsToNumsMap,
+                  rowPtrs: rowPtrsInt32,
+                  colIndices: colIndicesInt32
+                };
     }
     leftClickCanvasDown(event)  {
         let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
@@ -155,5 +195,11 @@ window.onload = function() {
     canvas.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         graph.rightClickCanvas(event);
+    });
+
+    CSRTestButton = document.getElementById("exportCSRTest");
+    CSRTestButton.addEventListener("click", () => {
+        let obj = graph.exportCSR();
+        console.log(obj);
     });
 }
