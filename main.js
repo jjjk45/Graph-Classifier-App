@@ -5,6 +5,7 @@ const mouseButton = Object.freeze({
 
 class Graphy    {
     #adjacency = new Map();
+    #mouseDown = null;
     /**
      * @param {number} radius - vertex radius
      * @param {canvasContext} ctx
@@ -16,75 +17,32 @@ class Graphy    {
         this.height = height;
         this.width = width;
         this.ctx = ctx;
-        this.mouseDown = null;
-    }
-    exportCSR()   {
-        if(this.#adjacency.size < 1)  {
-            console.error(`There are no vertices to export!`);
-            return;
-        }
-        const numsToLocationsMap = new Map(); //to be stored for converting back after wasm module uses the csr
-        const locationsToNumsMap = new Map(); //for use in this function
-        let i = 0;
-        for(let v of this.#adjacency.keys())    {
-            if(!numsToLocationsMap.has(i) && !locationsToNumsMap.has(v))   {
-                console.log(v);
-                numsToLocationsMap.set(i,v);
-                locationsToNumsMap.set(v,i);
-            }
-            i++;
-        }
-        const rowPtrs = new Array();
-        const colIndices = new Array();
-        let used = 0;
-        for(let v of this.#adjacency.keys()) {
-            let degree = 0;
-            for(let e of this.#adjacency.get(v).values())   {
-                colIndices.push(locationsToNumsMap.get(e));
-                degree++;
-                used++;
-            }
-            if(degree < 1)  {
-                rowPtrs[locationsToNumsMap.get(v)] = -1;
-            } else {
-                rowPtrs[locationsToNumsMap.get(v)] = (used - degree);
-            }
-        }
-        const rowPtrsInt32 = new Int32Array(rowPtrs);
-        const colIndicesInt32 = new Int32Array(colIndices);
-        return  { numsToLocationsMap: numsToLocationsMap,
-                  locationsToNumsMap: locationsToNumsMap,
-                  rowPtrs: rowPtrsInt32,
-                  colIndices: colIndicesInt32
-                };
     }
     leftClickCanvasDown(event)  {
-        let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
+        let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;   //all vertices are grid snapped by rounding down their locations
         let yCoord = Math.round(event.offsetY/this.gridSize) * this.gridSize;
         if(
-            xCoord <= 0 ||
-            yCoord <= 0 ||
-            xCoord >= this.width - this.radius ||
-            yCoord >= this.height - this.radius
-        )   {
+            xCoord <= 0 || yCoord <= 0 ||
+            xCoord >= this.width - this.radius || yCoord >= this.height - this.radius
+        ){
             console.log(`You cannot place vertices on the edge of the canvas`);
             return;
         }
         let key = `${xCoord},${yCoord}`;
-        if(this.mouseDown === null) {
-            this.mouseDown = key;
+        if(this.#mouseDown === null) {
+            this.#mouseDown = key;
             return;
         }
     }
     leftClickCanvasUp(event)    {
-        if(this.mouseDown == null || event.button != mouseButton.LEFT)   {
+        if(this.#mouseDown == null || event.button != mouseButton.LEFT)   {
             return;
         }
         let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
         let yCoord = Math.round(event.offsetY/this.gridSize) * this.gridSize;
         let key = `${xCoord},${yCoord}`;
-        const start = this.mouseDown;
-        this.mouseDown = null;
+        const start = this.#mouseDown ;
+        this.#mouseDown = null;
 
         if(start === key) {
             if(this.#adjacency.has(key)) {
@@ -106,11 +64,11 @@ class Graphy    {
         }
         this.#adjacency.get(start).add(key);
         this.#adjacency.get(key).add(start);
-        const [startX, startY] = start.split(",");
+        const [startX, startY] = start.split(",").map(Number);
         this.#drawEdge(startX, startY, xCoord, yCoord);
     }
     rightClickCanvas(event)    {
-        this.mouseDown = null;
+        this.#mouseDown = null;
         let xCoord = Math.round(event.offsetX/this.gridSize) * this.gridSize;
         let yCoord = Math.round(event.offsetY/this.gridSize) * this.gridSize;
         let key = `${xCoord},${yCoord}`;
@@ -156,15 +114,49 @@ class Graphy    {
         this.ctx.clearRect(0, 0, this.width, this.height)
         console.log(`Cleared from (0,0) to (${this.width},${this.height})`)
         for(let v of this.#adjacency.keys()) {
-            const [startX, startY] = v.split(",");
+            const [startX, startY] = v.split(",").map(Number);
             this.#drawVertex(startX, startY);
             for(let e of this.#adjacency.get(v).values())    {
-                const [endX, endY] = e.split(",");
+                const [endX, endY] = e.split(",").map(Number);
                 if(startX < endX || (startX === endX && startY < endY)) {
                     this.#drawEdge(startX, startY, endX, endY);
                 }
             }
         }
+    }
+    exportCSR() {
+        if(this.#adjacency.size < 1) {
+            console.error(`There are no vertices to export!`);
+            return;
+        }
+        const numsToLocationsMap = new Map();
+        const locationsToNumsMap = new Map();
+        const vertices = [...this.#adjacency.keys()];
+        const n = vertices.length;
+        for(let i = 0; i < n; i++) {
+            const v = vertices[i];
+            numsToLocationsMap.set(i, v);
+            locationsToNumsMap.set(v, i);
+        }
+        const rowPtrs = new Array(n + 1);
+        const colIndices = new Array();
+        let used = 0;
+        rowPtrs[0] = 0;
+        for(let i = 0; i < n; i++) {
+            const v = vertices[i];
+            for(let e of this.#adjacency.get(v)) {
+                colIndices.push(locationsToNumsMap.get(e));
+                used++;
+            }
+            rowPtrs[i + 1] = used;
+        }
+        return {
+            numsToLocationsMap: numsToLocationsMap,
+            locationsToNumsMap: locationsToNumsMap,
+            rowPtrs: new Int32Array(rowPtrs),
+            colIndices: new Int32Array(colIndices),
+            adjacencyList: this.#adjacency
+        };
     }
 }
 
@@ -197,7 +189,7 @@ window.onload = function() {
         graph.rightClickCanvas(event);
     });
 
-    CSRTestButton = document.getElementById("exportCSRTest");
+    const CSRTestButton = document.getElementById("exportCSRTest");
     CSRTestButton.addEventListener("click", () => {
         let obj = graph.exportCSR();
         console.log(obj);
